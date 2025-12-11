@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebCodec Hello World</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        video, canvas {
+            width: 100%;
+            max-width: 640px;
+            border: 2px solid #333;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 10px 5px;
+            cursor: pointer;
+        }
+        .info {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebCodec Hello World</h1>
+    <p>This example captures video from your webcam, encodes it with WebCodec, then decodes and displays it.</p>
+
+    <button id="startBtn">Start Webcam</button>
+    <button id="stopBtn" disabled>Stop</button>
+
+    <div class="info">
+        <p><strong>Original Video:</strong></p>
+        <video id="sourceVideo" autoplay muted playsinline></video>
+    </div>
+
+    <div class="info">
+        <p><strong>Decoded Output:</strong></p>
+        <canvas id="outputCanvas" width="640" height="480"></canvas>
+    </div>
+
+    <div class="info" id="stats">
+        Encoded frames: 0 | Decoded frames: 0
+    </div>
+
+    <script>
+        let mediaStream = null;
+        let videoEncoder = null;
+        let videoDecoder = null;
+        let encodedFrames = 0;
+        let decodedFrames = 0;
+        let frameCounter = 0;
+
+        const sourceVideo = document.getElementById('sourceVideo');
+        const outputCanvas = document.getElementById('outputCanvas');
+        const ctx = outputCanvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const stats = document.getElementById('stats');
+
+        // Initialize VideoDecoder
+        function initDecoder() {
+            videoDecoder = new VideoDecoder({
+                output: (frame) => {
+                    // Draw decoded frame to canvas
+                    ctx.drawImage(frame, 0, 0, outputCanvas.width, outputCanvas.height);
+                    frame.close();
+                    decodedFrames++;
+                    updateStats();
+                },
+                error: (e) => {
+                    console.error('Decoder error:', e);
+                }
+            });
+
+            videoDecoder.configure({
+                codec: 'vp8',
+                codedWidth: 640,
+                codedHeight: 480
+            });
+        }
+
+        // Initialize VideoEncoder
+        function initEncoder() {
+            videoEncoder = new VideoEncoder({
+                output: (chunk, metadata) => {
+                    // Send encoded chunk to decoder
+                    if (videoDecoder.state === 'configured') {
+                        videoDecoder.decode(chunk);
+                    }
+                    encodedFrames++;
+                    updateStats();
+                },
+                error: (e) => {
+                    console.error('Encoder error:', e);
+                }
+            });
+
+            videoEncoder.configure({
+                codec: 'vp8',
+                width: 640,
+                height: 480,
+                bitrate: 2_000_000,
+                framerate: 30
+            });
+        }
+
+        // Process video frames
+        function processFrame() {
+            if (!mediaStream) return;
+
+            const videoTrack = mediaStream.getVideoTracks()[0];
+            const processor = new MediaStreamTrackProcessor({ track: videoTrack });
+            const reader = processor.readable.getReader();
+
+            function readFrame() {
+                reader.read().then(({ done, value }) => {
+                    if (done) return;
+
+                    if (videoEncoder.state === 'configured') {
+                        const keyFrame = frameCounter % 30 === 0; // Keyframe every 30 frames
+                        videoEncoder.encode(value, { keyFrame });
+                        frameCounter++;
+                    }
+
+                    value.close();
+                    readFrame();
+                });
+            }
+
+            readFrame();
+        }
+
+        // Start webcam
+        async function startWebcam() {
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 }
+                });
+
+                sourceVideo.srcObject = mediaStream;
+
+                initDecoder();
+                initEncoder();
+                processFrame();
+
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            } catch (error) {
+                console.error('Error accessing webcam:', error);
+                alert('Could not access webcam. Please grant permission and try again.');
+            }
+        }
+
+        // Stop webcam
+        function stopWebcam() {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+
+            if (videoEncoder) {
+                videoEncoder.close();
+                videoEncoder = null;
+            }
+
+            if (videoDecoder) {
+                videoDecoder.close();
+                videoDecoder = null;
+            }
+
+            sourceVideo.srcObject = null;
+            ctx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+
+            encodedFrames = 0;
+            decodedFrames = 0;
+            frameCounter = 0;
+            updateStats();
+
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+
+        function updateStats() {
+            stats.textContent = `Encoded frames: ${encodedFrames} | Decoded frames: ${decodedFrames}`;
+        }
+
+        startBtn.addEventListener('click', startWebcam);
+        stopBtn.addEventListener('click', stopWebcam);
+
+        // Check WebCodec support
+        if (!('VideoEncoder' in window)) {
+            alert('WebCodec API is not supported in your browser. Please use a recent version of Chrome or Edge.');
+            startBtn.disabled = true;
+        }
+    </script>
+</body>
+</html>
