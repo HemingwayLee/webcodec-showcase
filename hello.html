@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Does WebCodec Supported</title>
+</head>
+<body>
+    <h1>Does WebCodec Supported</h1>
+    <script>
+        // Check WebCodec support
+        if (!('VideoEncoder' in window)) {
+            alert('WebCodec API is not supported in your browser. Please use a recent version of Chrome or Edge.');
+        } else {
+            alert('WebCodec API supported !!!!');
+        }
+    </script>
+</body>
+</html>
